@@ -42,12 +42,12 @@ type appsResponse struct {
 	Apps []App `json:"apps"`
 }
 
-// v4 is the protocol version required by app create/trash endpoints.
-var v4 = client.WithProtocolVersion("4")
+// protocolV4 is the protocol version required by app create/trash endpoints.
+var protocolV4 = client.WithProtocolVersion("4")
 
 // CreateApp creates a new App Store app from its Adam ID and returns the app ID.
 func (c *Client) CreateApp(ctx context.Context, input AppCreateInput) (int64, error) {
-	resp, err := c.transport.DoRequest(ctx, http.MethodPost, "/apps", input, v4)
+	resp, err := c.transport.DoRequest(ctx, http.MethodPost, "/apps", input, protocolV4)
 	if err != nil {
 		return 0, err
 	}
@@ -60,7 +60,7 @@ func (c *Client) CreateApp(ctx context.Context, input AppCreateInput) (int64, er
 
 // TrashApp moves an app to trash (soft delete).
 func (c *Client) TrashApp(ctx context.Context, id int64) error {
-	_, err := c.transport.DoRequest(ctx, http.MethodPost, fmt.Sprintf("/apps/%d/trash", id), nil, v4)
+	_, err := c.transport.DoRequest(ctx, http.MethodPost, fmt.Sprintf("/apps/%d/trash", id), nil, protocolV4)
 	return err
 }
 

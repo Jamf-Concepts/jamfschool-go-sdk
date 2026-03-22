@@ -78,7 +78,7 @@ Use `errors.Is(err, jamfschool.ErrNotFound)` to check.
 
 ```go
 type Logger interface {
-    LogRequest(ctx context.Context, method, url string, body []byte)
+    LogRequest(ctx context.Context, method, url string, headers http.Header, body []byte)
     LogResponse(ctx context.Context, statusCode int, headers http.Header, body []byte)
 }
 ```

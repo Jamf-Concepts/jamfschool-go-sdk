@@ -43,3 +43,6 @@ dist/
 
 # Logs
 *.log
+
+# OSS pre-release checklist (local only — do not commit)
+jamf-oss-developer-checklist-*.md

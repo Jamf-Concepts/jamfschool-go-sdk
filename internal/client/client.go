@@ -148,7 +148,7 @@ func (c *Client) DoRequest(ctx context.Context, method, path string, body any, o
 	}
 
 	if c.logger != nil {
-		c.logger.LogRequest(ctx, method, reqURL, redactRequestHeaders(req.Header), reqBytes)
+		c.logger.LogRequest(ctx, method, reqURL, redactRequestHeaders(req.Header), redactRequestBody(reqBytes))
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -176,6 +176,41 @@ func (c *Client) DoRequest(ctx context.Context, method, path string, body any, o
 	}
 
 	return respBody, nil
+}
+
+// sensitiveBodyKeys lists JSON field names whose values must be redacted before logging.
+var sensitiveBodyKeys = map[string]bool{
+	"password":      true,
+	"storePassword": true,
+}
+
+// redactRequestBody returns a copy of body with sensitive JSON field values replaced.
+func redactRequestBody(body []byte) []byte {
+	if len(body) == 0 {
+		return body
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return body
+	}
+
+	redacted := false
+	for key := range sensitiveBodyKeys {
+		if _, ok := parsed[key]; ok {
+			parsed[key] = "[REDACTED]"
+			redacted = true
+		}
+	}
+	if !redacted {
+		return body
+	}
+
+	out, err := json.Marshal(parsed)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 // redactRequestHeaders returns a copy of headers with sensitive values redacted.

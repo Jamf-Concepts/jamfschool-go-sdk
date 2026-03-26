@@ -274,3 +274,179 @@ func TestDoRequest_CancelledContext(t *testing.T) {
 		t.Fatal("expected error for cancelled context, got nil")
 	}
 }
+
+func TestRedactRequestHeaders(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		headers  http.Header
+		wantAuth string
+		wantNil  bool
+	}{
+		{
+			name:    "nil headers",
+			headers: nil,
+			wantNil: true,
+		},
+		{
+			name: "redacts authorization",
+			headers: http.Header{
+				"Authorization": []string{"Basic abc123"},
+				"Content-Type":  []string{"application/json"},
+			},
+			wantAuth: "[REDACTED]",
+		},
+		{
+			name: "no authorization header",
+			headers: http.Header{
+				"Content-Type": []string{"application/json"},
+			},
+			wantAuth: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := redactRequestHeaders(tt.headers)
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("expected nil, got %v", got)
+				}
+				return
+			}
+			if got.Get("Authorization") != tt.wantAuth {
+				t.Errorf("expected Authorization %q, got %q", tt.wantAuth, got.Get("Authorization"))
+			}
+			if got.Get("Content-Type") != tt.headers.Get("Content-Type") {
+				t.Errorf("expected Content-Type preserved, got %q", got.Get("Content-Type"))
+			}
+		})
+	}
+}
+
+func TestRedactRequestHeaders_DoesNotMutateOriginal(t *testing.T) {
+	t.Parallel()
+
+	original := http.Header{"Authorization": []string{"Basic secret"}}
+	_ = redactRequestHeaders(original)
+
+	if original.Get("Authorization") != "Basic secret" {
+		t.Errorf("original header was mutated: got %q", original.Get("Authorization"))
+	}
+}
+
+func TestRedactRequestBody(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "redacts password",
+			body: `{"username":"jsmith","password":"secret123"}`,
+			want: `{"password":"[REDACTED]","username":"jsmith"}`,
+		},
+		{
+			name: "redacts storePassword",
+			body: `{"username":"jsmith","storePassword":true}`,
+			want: `{"storePassword":"[REDACTED]","username":"jsmith"}`,
+		},
+		{
+			name: "redacts both fields",
+			body: `{"username":"jsmith","password":"secret","storePassword":true}`,
+			want: `{"password":"[REDACTED]","storePassword":"[REDACTED]","username":"jsmith"}`,
+		},
+		{
+			name: "no sensitive fields unchanged",
+			body: `{"username":"jsmith","email":"j@example.com"}`,
+			want: `{"username":"jsmith","email":"j@example.com"}`,
+		},
+		{
+			name: "empty body unchanged",
+			body: "",
+			want: "",
+		},
+		{
+			name: "non-json body unchanged",
+			body: "not json",
+			want: "not json",
+		},
+		{
+			name: "json array unchanged",
+			body: `[1,2,3]`,
+			want: `[1,2,3]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := string(redactRequestBody([]byte(tt.body)))
+			if got != tt.want {
+				t.Errorf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestDoRequest_RedactsPasswordInLoggedBody(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id": 1}`))
+	}))
+	defer server.Close()
+
+	logger := &capturingLogger{}
+	c := NewClient(server.URL, "net", "key")
+	c.SetLogger(logger)
+
+	payload := map[string]any{
+		"username": "jsmith",
+		"password": "SuperSecret123!",
+	}
+	_, err := c.DoRequest(context.Background(), http.MethodPost, "/users", payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	logged := string(logger.lastRequestBody)
+	if contains(logged, "SuperSecret123!") {
+		t.Errorf("password was not redacted in logged body: %s", logged)
+	}
+	if !contains(logged, "[REDACTED]") {
+		t.Errorf("expected [REDACTED] in logged body: %s", logged)
+	}
+	if !contains(logged, "jsmith") {
+		t.Errorf("expected non-sensitive field preserved in logged body: %s", logged)
+	}
+}
+
+// capturingLogger captures the most recent LogRequest body for test assertions.
+type capturingLogger struct {
+	lastRequestBody []byte
+}
+
+func (l *capturingLogger) LogRequest(_ context.Context, _, _ string, _ http.Header, body []byte) {
+	l.lastRequestBody = body
+}
+
+func (l *capturingLogger) LogResponse(_ context.Context, _ int, _ http.Header, _ []byte) {}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && searchString(s, substr)
+}
+
+func searchString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

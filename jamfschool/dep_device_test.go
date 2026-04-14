@@ -78,6 +78,34 @@ func TestGetDEPDevice(t *testing.T) {
 	}
 }
 
+func TestGetDEPDevice_StringDates(t *testing.T) {
+	t.Parallel()
+
+	c, mux := testServer(t)
+	mux.HandleFunc("/api/dep/C02XSTR", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, http.StatusOK, map[string]any{
+			"code": 0,
+			"placeholder": map[string]any{
+				"id":           60,
+				"serialNumber": "C02XSTR",
+				"dateAdded":    "1700000000",
+				"datePushed":   "1700100000",
+			},
+		})
+	})
+
+	dep, err := c.GetDEPDevice(context.Background(), "C02XSTR")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dep.DateAdded != 1700000000 {
+		t.Errorf("expected dateAdded 1700000000, got %d", dep.DateAdded)
+	}
+	if dep.DatePushed != 1700100000 {
+		t.Errorf("expected datePushed 1700100000, got %d", dep.DatePushed)
+	}
+}
+
 func TestGetDEPDevice_NotFound(t *testing.T) {
 	t.Parallel()
 

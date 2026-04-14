@@ -74,6 +74,53 @@ func TestGetDevice(t *testing.T) {
 	}
 }
 
+func TestGetDevice_ObjectFields(t *testing.T) {
+	t.Parallel()
+
+	c, mux := testServer(t)
+	mux.HandleFunc("/api/devices/UDID-002", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// The single-device endpoint returns some fields as objects
+		// instead of strings: model.type, lastCheckin, deviceEnrollType, etc.
+		_, _ = w.Write([]byte(`{
+			"code": 0,
+			"device": {
+				"UDID": "UDID-002",
+				"name": "iPad",
+				"lastCheckin": {"date": "2026-03-18 20:48:54", "epoch": 1774064934},
+				"deviceEnrollType": {"value": "dep"},
+				"assetTag": {"value": "ASSET-001"},
+				"notes": {"text": "Lab device"},
+				"model": {"name": "iPad Air", "identifier": "iPad13,2", "type": {"name": "iPad", "type": "iOS"}},
+				"os": {"prefix": "iPadOS", "version": "17.4"}
+			}
+		}`))
+	})
+
+	device, err := c.GetDevice(context.Background(), "UDID-002")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if device.Model.Name != "iPad Air" {
+		t.Errorf("expected model name %q, got %q", "iPad Air", device.Model.Name)
+	}
+	if device.Model.Type != "iOS" {
+		t.Errorf("expected model type %q, got %q", "iOS", device.Model.Type)
+	}
+	if device.LastCheckin != "2026-03-18 20:48:54" {
+		t.Errorf("expected lastCheckin %q, got %q", "2026-03-18 20:48:54", device.LastCheckin)
+	}
+	if device.DeviceEnrollType != "dep" {
+		t.Errorf("expected deviceEnrollType %q, got %q", "dep", device.DeviceEnrollType)
+	}
+	if device.AssetTag != "ASSET-001" {
+		t.Errorf("expected assetTag %q, got %q", "ASSET-001", device.AssetTag)
+	}
+	if device.Notes != "Lab device" {
+		t.Errorf("expected notes %q, got %q", "Lab device", device.Notes)
+	}
+}
+
 func TestGetDevice_NotFound(t *testing.T) {
 	t.Parallel()
 

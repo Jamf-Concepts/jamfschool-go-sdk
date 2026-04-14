@@ -5,6 +5,7 @@ package jamfschool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 )
@@ -23,6 +24,29 @@ type DEPDevice struct {
 	DatePushed      int64  `json:"datePushed,omitempty"`
 	ProfileName     string `json:"profileName,omitempty"`
 	PlaceholderName string `json:"placeholderName,omitempty"`
+}
+
+// UnmarshalJSON handles the API returning dateAdded/datePushed as either
+// numbers or strings depending on the endpoint.
+func (d *DEPDevice) UnmarshalJSON(data []byte) error {
+	type Alias DEPDevice
+	aux := &struct {
+		DateAdded  json.RawMessage `json:"dateAdded,omitempty"`
+		DatePushed json.RawMessage `json:"datePushed,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(d),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if len(aux.DateAdded) > 0 {
+		d.DateAdded = parseFlexibleInt64(aux.DateAdded)
+	}
+	if len(aux.DatePushed) > 0 {
+		d.DatePushed = parseFlexibleInt64(aux.DatePushed)
+	}
+	return nil
 }
 
 type depDeviceResponse struct {
